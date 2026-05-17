@@ -1004,7 +1004,7 @@
     }
 
     function renderMarkdown(text) {
-      const escaped = escapeHtml(text);
+      const escaped = escapeHtml(text || '');
       const withBlocks = escaped.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
       return withBlocks
         .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -1016,7 +1016,7 @@
     }
 
     function escapeHtml(value) {
-      return value.replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+      return String(value || '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     }
 
     function appendMessage(role, content, apiContent = content) {
@@ -1030,14 +1030,14 @@
       return chat.messages.length - 1;
     }
 
-    function updateMessage(index, content) {
+    function updateMessage(index, content = '') {
       const chat = activeChat();
-      chat.messages[index].content = content;
+      chat.messages[index].content = content || '';
       saveState();
       const nodes = els.messages.querySelectorAll('.message');
       const bubble = nodes[index]?.querySelector('.bubble');
       if (bubble) {
-        bubble.innerHTML = renderMarkdown(content);
+        bubble.innerHTML = renderMarkdown(content || '');
         const copy = document.createElement('button');
         copy.className = 'copy-btn';
         copy.type = 'button';
@@ -1136,7 +1136,7 @@
         return {
           display: `【图片】${file.name}`,
           api: [
-            { type: 'text', text: `请分析这张图片：${file.name}` },
+            { type: 'text', text: `请用中文简洁回答图片重点。只输出结论和必要细节，最多 5 条要点；不要逐块描述画面位置；如果看不清，只说看不清。图片名：${file.name}` },
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         };
@@ -1221,6 +1221,11 @@
       return ({ low: 1024, medium: 4096, high: 8192, xhigh: 16384 }[value] || 4096);
     }
 
+    function limitResponse(content) {
+      const text = String(content || '');
+      return text.length > 6000 ? `${text.slice(0, 6000)}\n\n内容过长，已自动截断。` : text;
+    }
+
     function headers() {
       return {
         'Content-Type': 'application/json',
@@ -1254,7 +1259,7 @@
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
       if (!content) throw new Error('接口返回格式异常');
-      return content;
+      return limitResponse(content);
     }
 
     async function requestStream(messages, onUpdate, signal) {
@@ -1289,7 +1294,7 @@
             const delta = data?.choices?.[0]?.delta?.content || '';
           if (delta) {
               full += delta;
-              onUpdate(full);
+              onUpdate(limitResponse(full));
             }
           } catch {}
         }
