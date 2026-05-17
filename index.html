@@ -1050,6 +1050,13 @@
       scrollBottom();
     }
 
+    function removeMessages(startIndex, count) {
+      const chat = activeChat();
+      chat.messages.splice(startIndex, count);
+      saveState();
+      render();
+    }
+
     async function sendMessage(event) {
       event.preventDefault();
       if (sending) {
@@ -1065,7 +1072,7 @@
       }
 
       const built = await buildUserMessage(text);
-      appendMessage('user', built.display, built.api);
+      const userIndex = appendMessage('user', built.display, built.api);
       attachments = [];
       renderAttachments();
       els.prompt.value = '';
@@ -1082,8 +1089,8 @@
         updateMessage(assistantIndex, content);
       } catch (error) {
         if (error.name === 'AbortError') {
-          updateMessage(assistantIndex, '已停止');
-          showToast('已停止生成');
+          removeMessages(userIndex, 2);
+          showToast('已停止，上一条图片不会带入下次请求');
         } else {
           updateMessage(assistantIndex, `请求失败：${error.message}`);
           showToast(`请求失败：${error.message}`, true);
