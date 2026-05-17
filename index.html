@@ -407,11 +407,17 @@
       background: rgba(2, 6, 23, 0.42);
     }
 
-    .copy-btn {
+    .message-actions {
       position: absolute;
       top: 9px;
       right: 9px;
+      display: flex;
+      gap: 6px;
       opacity: 0;
+      transition: opacity .18s ease;
+    }
+
+    .message-action {
       border: 1px solid rgba(148, 163, 184, 0.16);
       background: rgba(15, 23, 42, 0.86);
       color: var(--muted);
@@ -420,7 +426,20 @@
       font-size: 12px;
     }
 
-    .bubble:hover .copy-btn { opacity: 1; }
+    .message-action:hover {
+      color: white;
+      border-color: rgba(124, 58, 237, 0.45);
+      background: rgba(124, 58, 237, 0.22);
+    }
+
+    .message-action.danger:hover {
+      border-color: rgba(244, 63, 94, 0.45);
+      background: rgba(244, 63, 94, 0.18);
+    }
+
+    .bubble:hover .message-actions { opacity: 1; }
+
+    .copy-btn { display: none; }
 
     .composer-wrap {
       padding: 16px clamp(16px, 4vw, 52px) 22px;
@@ -1003,12 +1022,7 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       bubble.innerHTML = renderMarkdown(message.content || '');
-      const copy = document.createElement('button');
-      copy.className = 'copy-btn';
-      copy.type = 'button';
-      copy.textContent = '复制';
-      copy.onclick = () => copyText(message.content || '');
-      bubble.appendChild(copy);
+      bubble.appendChild(createMessageActions(message, index));
       renderMath(bubble);
       wrap.append(avatar, bubble);
       return wrap;
@@ -1034,6 +1048,27 @@
       if (window.MathJax?.typesetPromise) window.MathJax.typesetPromise([element]).catch(() => {});
     }
 
+    function createMessageActions(message, index) {
+      const actions = document.createElement('div');
+      actions.className = 'message-actions';
+      actions.appendChild(createActionButton('复制', () => copyText(message.content || '')));
+      if (message.role === 'user') actions.appendChild(createActionButton('重发', () => regenerateFrom(index)));
+      actions.appendChild(createActionButton('删除', () => deleteMessage(index), 'danger'));
+      return actions;
+    }
+
+    function createActionButton(text, onClick, extraClass = '') {
+      const button = document.createElement('button');
+      button.className = `message-action ${extraClass}`.trim();
+      button.type = 'button';
+      button.textContent = text;
+      button.onclick = event => {
+        event.stopPropagation();
+        onClick();
+      };
+      return button;
+    }
+
     function appendMessage(role, content, apiContent = content) {
       const chat = activeChat();
       chat.messages.push({ role, content, apiContent });
@@ -1053,12 +1088,7 @@
       const bubble = nodes[index]?.querySelector('.bubble');
       if (bubble) {
         bubble.innerHTML = renderMarkdown(content || '');
-        const copy = document.createElement('button');
-        copy.className = 'copy-btn';
-        copy.type = 'button';
-        copy.textContent = '复制';
-        copy.onclick = () => copyText(content);
-        bubble.appendChild(copy);
+        bubble.appendChild(createMessageActions(chat.messages[index], index));
         renderMath(bubble);
       } else {
         renderMessages();
@@ -1073,15 +1103,57 @@
       render();
     }
 
+    function deleteMessage(index) {
+      removeMessages(index, 1);
+      showToast('已删除，这条消息不会再发给 AI');
+    }
+
+    async function regenerateFrom(index) {
+      if (sending) return;
+      const chat = activeChat();
+      const message = chat.messages[index];
+      if (!message || message.role !== 'user') return;
+      const removedCount = chat.messages.length - index - 1;
+      if (removedCount > 0) chat.messages.splice(index + 1, removedCount);
+      const assistantIndex = chat.messages.push({ role: 'assistant', content: '', apiContent: '' }) - 1;
+      saveState();
+      render();
+      setSending(true);
+      activeController = new AbortController();
+      try {
+        const messages = chat.messages
+          .slice(0, assistantIndex)
+          .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
+        const shouldStream = config.stream && !hasImageContent(message.apiContent);
+        const content = await requestWithRetry(messages, shouldStream, next => updateMessage(assistantIndex, next), activeController.signal);
+        updateMessage(assistantIndex, content);
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          removeMessages(assistantIndex, 1);
+          showToast('已停止重新生成');
+        } else {
+          updateMessage(assistantIndex, `请求失败：${error.message}`);
+          showToast(`请求失败：${error.message}`, true);
+        }
+      } finally {
+        activeController = null;
+        setSending(false);
+      }
+    }
+
+    function hasImageContent(content) {
+      return Array.isArray(content) && content.some(part => part?.type === 'image_url');
+    }
+
     async function sendMessage(event) {
       event.preventDefault();
       if (sending) {
         activeController?.abort();
         return;
       }
+      saveConfig();
       const text = els.prompt.value.trim();
       if (!text && !attachments.length) return;
-      saveConfig();
       if (!config.baseUrl || !config.apiKey || !config.model) {
         showToast('请先填写 API 地址、API Key 和模型名', true);
         return;
