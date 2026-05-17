@@ -46,7 +46,9 @@
 
 ## 注意事项
 
-- API Key 保存在访问者自己的浏览器 localStorage，不会上传到托管平台。
+- 上传图片和文本类文件
+- PDF/Word/Excel 等文件可通过 Vercel API 后端调用 GPT 尝试解析
+- API Key 保存在访问者自己的浏览器 localStorage；上传 PDF/Word/Excel 等需要后端解析的文件时，会随请求发送到本站 Vercel API 用于调用你配置的 GPT 接口。
 - 聊天记录保存在访问者自己的浏览器 IndexedDB。
 - 如果请求失败并提示 CORS，需要你的 API 服务允许浏览器跨域访问。
 - 静态托管平台只负责打开网页，不负责代理 API 请求。
