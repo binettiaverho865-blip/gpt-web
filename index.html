@@ -579,6 +579,16 @@
       .actions .ghost-btn { display: none; }
     }
   </style>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 </head>
 <body>
   <div class="app">
@@ -999,6 +1009,7 @@
       copy.textContent = '复制';
       copy.onclick = () => copyText(message.content || '');
       bubble.appendChild(copy);
+      renderMath(bubble);
       wrap.append(avatar, bubble);
       return wrap;
     }
@@ -1017,6 +1028,10 @@
 
     function escapeHtml(value) {
       return String(value || '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+    }
+
+    function renderMath(element) {
+      if (window.MathJax?.typesetPromise) window.MathJax.typesetPromise([element]).catch(() => {});
     }
 
     function appendMessage(role, content, apiContent = content) {
@@ -1044,6 +1059,7 @@
         copy.textContent = '复制';
         copy.onclick = () => copyText(content);
         bubble.appendChild(copy);
+        renderMath(bubble);
       } else {
         renderMessages();
       }
@@ -1211,10 +1227,17 @@
     }
 
     function requestBody(messages, stream) {
-      const body = { model: config.model, messages, stream };
+      const body = { model: config.model, messages: withSystemPrompt(messages), stream };
       body.reasoning_effort = config.reasoningEffort || 'high';
       body.thinking = { type: 'enabled', budget_tokens: effortBudget(config.reasoningEffort || 'high') };
       return JSON.stringify(body);
+    }
+
+    function withSystemPrompt(messages) {
+      return [
+        { role: 'system', content: '如果回答包含数学公式，请使用标准 LaTeX：行内公式用 $...$，独立公式用 $$...$$。不要用纯文本模拟分式、根号或上下标。' },
+        ...messages,
+      ];
     }
 
     function effortBudget(value) {
