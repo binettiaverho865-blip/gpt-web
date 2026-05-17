@@ -408,13 +408,13 @@
     }
 
     .message-actions {
-      position: absolute;
-      top: 9px;
-      right: 9px;
       display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
       gap: 6px;
-      opacity: 0;
-      transition: opacity .18s ease;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.12);
     }
 
     .message-action {
@@ -436,10 +436,6 @@
       border-color: rgba(244, 63, 94, 0.45);
       background: rgba(244, 63, 94, 0.18);
     }
-
-    .bubble:hover .message-actions { opacity: 1; }
-
-    .copy-btn { display: none; }
 
     .composer-wrap {
       padding: 16px clamp(16px, 4vw, 52px) 22px;
