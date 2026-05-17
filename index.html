@@ -740,9 +740,9 @@
 
     function loadConfig() {
       try {
-        return { stream: true, model: 'gpt-4o-mini', reasoningEffort: 'none', models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
+        return { stream: true, model: '', reasoningEffort: 'none', models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
       } catch {
-        return { baseUrl: '', apiKey: '', model: 'gpt-4o-mini', reasoningEffort: 'none', models: [], stream: true };
+        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'none', models: [], stream: true };
       }
     }
 
