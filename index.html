@@ -1085,7 +1085,9 @@
         const messages = activeChat().messages
           .slice(0, assistantIndex)
           .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
-        const content = await requestWithRetry(messages, next => updateMessage(assistantIndex, next), activeController.signal);
+        const shouldStream = config.stream && !built.hasImage;
+        if (built.hasImage && config.stream) showToast('图片请求已自动关闭流式输出');
+        const content = await requestWithRetry(messages, shouldStream, next => updateMessage(assistantIndex, next), activeController.signal);
         updateMessage(assistantIndex, content);
       } catch (error) {
         if (error.name === 'AbortError') {
@@ -1102,25 +1104,35 @@
     }
 
     async function buildUserMessage(text) {
-      if (!attachments.length) return { display: text, api: text };
+      if (!attachments.length) return { display: text, api: text, hasImage: false };
       const displayParts = [];
       const apiParts = [];
+      let hasImage = false;
+      let imageCount = 0;
       if (text) {
         displayParts.push(text);
         apiParts.push({ type: 'text', text });
       }
       for (const file of attachments) {
+        if (file.type.startsWith('image/')) {
+          imageCount += 1;
+          if (imageCount > 3) {
+            showToast('一次最多发送 3 张图片，已跳过多余图片', true);
+            continue;
+          }
+          hasImage = true;
+        }
         showToast(`正在处理 ${file.name}...`);
         const part = await attachmentToMessagePart(file);
         displayParts.push(part.display);
         apiParts.push(...part.api);
       }
-      return { display: displayParts.join('\n\n'), api: apiParts };
+      return { display: displayParts.join('\n\n'), api: apiParts, hasImage };
     }
 
     async function attachmentToMessagePart(file) {
       if (file.type.startsWith('image/')) {
-        const dataUrl = await fileToDataUrl(file);
+        const dataUrl = await compressImage(file);
         return {
           display: `【图片】${file.name}`,
           api: [
@@ -1153,6 +1165,32 @@
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(file);
+      });
+    }
+
+    async function compressImage(file, maxSide = 1280, quality = 0.75) {
+      const image = await loadImage(file);
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+
+    function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const url = URL.createObjectURL(file);
+        image.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(image);
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('图片读取失败'));
+        };
+        image.src = url;
       });
     }
 
@@ -1190,18 +1228,18 @@
       };
     }
 
-    async function requestWithRetry(messages, onUpdate, signal) {
+    async function requestWithRetry(messages, stream, onUpdate, signal) {
       try {
-        return await requestOnce(messages, onUpdate, signal);
+        return await requestOnce(messages, stream, onUpdate, signal);
       } catch (error) {
         if (error.name === 'AbortError') throw error;
         showToast('请求失败，正在自动重试...');
-        return await requestOnce(messages, onUpdate, signal);
+        return await requestOnce(messages, stream, onUpdate, signal);
       }
     }
 
-    async function requestOnce(messages, onUpdate, signal) {
-      if (config.stream) return await requestStream(messages, onUpdate, signal);
+    async function requestOnce(messages, stream, onUpdate, signal) {
+      if (stream) return await requestStream(messages, onUpdate, signal);
       return await requestJson(messages, signal);
     }
 
