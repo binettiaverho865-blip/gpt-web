@@ -739,11 +739,17 @@
         <summary>接口配置</summary>
         <div class="field">
           <label for="baseUrl">API Base URL</label>
-          <input id="baseUrl" placeholder="https://你的域名" autocomplete="off" />
+          <div class="field-row">
+            <input id="baseUrl" placeholder="https://你的域名" autocomplete="off" />
+            <button class="ghost-btn small-btn" id="defaultApiBtn" type="button">默认</button>
+          </div>
         </div>
         <div class="field">
           <label for="apiKey">API Key</label>
-          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <div class="field-row">
+            <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+            <button class="ghost-btn small-btn" id="trialKeyBtn" type="button">体验</button>
+          </div>
         </div>
         <div class="field">
           <label for="model">Model</label>
@@ -866,7 +872,9 @@
       prompt: document.getElementById('prompt'),
       sendBtn: document.getElementById('sendBtn'),
       baseUrl: document.getElementById('baseUrl'),
+      defaultApiBtn: document.getElementById('defaultApiBtn'),
       apiKey: document.getElementById('apiKey'),
+      trialKeyBtn: document.getElementById('trialKeyBtn'),
       model: document.getElementById('model'),
       customModel: document.getElementById('customModel'),
       fetchModelsBtn: document.getElementById('fetchModelsBtn'),
@@ -1644,6 +1652,29 @@
       }
     }
 
+    async function fetchTrialKey() {
+      els.trialKeyBtn.disabled = true;
+      els.trialKeyBtn.textContent = '申请中';
+      showToast('正在申请体验 Key...');
+      try {
+        const response = await fetch('/api/trial-key', { method: 'POST' });
+        if (!response.ok) throw new Error(await response.text());
+        const data = await response.json();
+        const apiKey = data?.apiKey || data?.key || data?.token;
+        if (!apiKey) throw new Error('体验接口没有返回 Key');
+        els.baseUrl.value = 'https://api.cupk123shiyou.xyz';
+        els.apiKey.value = apiKey;
+        saveConfig();
+        renderHeader();
+        showToast('已填入体验 Key');
+      } catch (error) {
+        showToast(`体验 Key 申请失败：${error.message}`, true);
+      } finally {
+        els.trialKeyBtn.disabled = false;
+        els.trialKeyBtn.textContent = '体验';
+      }
+    }
+
     async function fetchModels() {
       saveConfig();
       if (!config.baseUrl || !config.apiKey) {
@@ -1778,6 +1809,13 @@
       renderAttachments();
     });
     els.fetchModelsBtn.addEventListener('click', fetchModels);
+    els.defaultApiBtn.addEventListener('click', () => {
+      els.baseUrl.value = 'https://api.cupk123shiyou.xyz';
+      saveConfig();
+      renderHeader();
+      showToast('已填入默认接口地址');
+    });
+    els.trialKeyBtn.addEventListener('click', fetchTrialKey);
     els.model.addEventListener('change', () => {
       if (els.model.value) els.customModel.value = '';
       saveConfig();
