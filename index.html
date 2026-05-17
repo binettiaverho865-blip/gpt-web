@@ -703,6 +703,7 @@
     let config = loadConfig();
     let db;
     let sending = false;
+    let activeController = null;
     let attachments = [];
 
     function openDb() {
@@ -1051,8 +1052,12 @@
 
     async function sendMessage(event) {
       event.preventDefault();
+      if (sending) {
+        activeController?.abort();
+        return;
+      }
       const text = els.prompt.value.trim();
-      if ((!text && !attachments.length) || sending) return;
+      if (!text && !attachments.length) return;
       saveConfig();
       if (!config.baseUrl || !config.apiKey || !config.model) {
         showToast('请先填写 API 地址、API Key 和模型名', true);
@@ -1067,23 +1072,24 @@
       autosize();
       const assistantIndex = appendMessage('assistant', '');
       setSending(true);
+      activeController = new AbortController();
 
       try {
         const messages = activeChat().messages
           .slice(0, assistantIndex)
           .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
-        if (config.stream) {
-          await requestStream(messages, content => {
-            updateMessage(assistantIndex, content);
-          });
-        } else {
-          const content = await requestJson(messages);
-          updateMessage(assistantIndex, content);
-        }
+        const content = await requestWithRetry(messages, next => updateMessage(assistantIndex, next), activeController.signal);
+        updateMessage(assistantIndex, content);
       } catch (error) {
-        updateMessage(assistantIndex, `请求失败：${error.message}`);
-        showToast(error.message, true);
+        if (error.name === 'AbortError') {
+          updateMessage(assistantIndex, '已停止');
+          showToast('已停止生成');
+        } else {
+          updateMessage(assistantIndex, `请求失败：${error.message}`);
+          showToast(`请求失败：${error.message}`, true);
+        }
       } finally {
+        activeController = null;
         setSending(false);
       }
     }
@@ -1177,24 +1183,41 @@
       };
     }
 
-    async function requestJson(messages) {
+    async function requestWithRetry(messages, onUpdate, signal) {
+      try {
+        return await requestOnce(messages, onUpdate, signal);
+      } catch (error) {
+        if (error.name === 'AbortError') throw error;
+        showToast('请求失败，正在自动重试...');
+        return await requestOnce(messages, onUpdate, signal);
+      }
+    }
+
+    async function requestOnce(messages, onUpdate, signal) {
+      if (config.stream) return await requestStream(messages, onUpdate, signal);
+      return await requestJson(messages, signal);
+    }
+
+    async function requestJson(messages, signal) {
       const response = await fetch(endpoint(), {
         method: 'POST',
         headers: headers(),
         body: requestBody(messages, false),
+        signal,
       });
       if (!response.ok) throw new Error(await readError(response));
       const data = await response.json();
       const content = data?.choices?.[0]?.message?.content;
-      if (!content) throw new Error('接口返回格式异常，未找到 choices[0].message.content');
+      if (!content) throw new Error('接口返回格式异常');
       return content;
     }
 
-    async function requestStream(messages, onUpdate) {
+    async function requestStream(messages, onUpdate, signal) {
       const response = await fetch(endpoint(), {
         method: 'POST',
         headers: headers(),
         body: requestBody(messages, true),
+        signal,
       });
       if (!response.ok) throw new Error(await readError(response));
       if (!response.body) throw new Error('浏览器不支持流式响应读取');
@@ -1298,9 +1321,10 @@
 
     function setSending(value) {
       sending = value;
-      els.sendBtn.disabled = value;
+      els.sendBtn.disabled = false;
       els.prompt.disabled = value;
-      els.sendBtn.textContent = value ? '…' : '↑';
+      els.sendBtn.textContent = value ? '■' : '↑';
+      els.sendBtn.title = value ? '停止生成' : '发送';
     }
 
     function autosize() {
