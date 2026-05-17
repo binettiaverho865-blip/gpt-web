@@ -1094,15 +1094,15 @@
       const apiParts = [];
       if (text) {
         displayParts.push(text);
-        apiParts.push(text);
+        apiParts.push({ type: 'text', text });
       }
       for (const file of attachments) {
         showToast(`正在处理 ${file.name}...`);
         const part = await attachmentToMessagePart(file);
         displayParts.push(part.display);
-        apiParts.push(part.api);
+        apiParts.push(...part.api);
       }
-      return { display: displayParts.join('\n\n'), api: apiParts.join('\n\n') };
+      return { display: displayParts.join('\n\n'), api: apiParts };
     }
 
     async function attachmentToMessagePart(file) {
@@ -1110,20 +1110,23 @@
         const dataUrl = await fileToDataUrl(file);
         return {
           display: `【图片】${file.name}`,
-          api: `请分析这张图片：${file.name}\n\n${dataUrl}`,
+          api: [
+            { type: 'text', text: `请分析这张图片：${file.name}` },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
         };
       }
       if (isPlainTextFile(file)) {
         const text = await file.text();
         return {
           display: `【文件】${file.name}`,
-          api: `下面是文件 ${file.name} 的内容：\n\n${text.slice(0, 60000)}`,
+          api: [{ type: 'text', text: `下面是文件 ${file.name} 的内容：\n\n${text.slice(0, 60000)}` }],
         };
       }
       const parsed = await parseFileWithBackend(file);
       return {
         display: `【文件】${file.name}\n${parsed.slice(0, 1200)}${parsed.length > 1200 ? '\n…' : ''}`,
-        api: `下面是文件 ${file.name} 的 GPT 解析结果：\n\n${parsed}`,
+        api: [{ type: 'text', text: `下面是文件 ${file.name} 的 GPT 解析结果：\n\n${parsed}` }],
       };
     }
 
