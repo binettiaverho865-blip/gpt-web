@@ -1283,7 +1283,7 @@
           const line = rawLine.trim();
           if (!line || !line.startsWith('data:')) continue;
           const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
+          if (payload === '[DONE]') return full;
           try {
             const data = JSON.parse(payload);
             const delta = data?.choices?.[0]?.delta?.content || '';
@@ -1296,6 +1296,7 @@
       }
 
       if (!full) throw new Error('流式响应为空，请检查接口是否兼容 OpenAI SSE');
+      return full;
     }
 
     async function readError(response) {
