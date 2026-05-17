@@ -19,6 +19,11 @@ export default async function handler(req, res) {
     if (!baseUrl || !apiKey || !model) throw new Error('缺少 API Base URL、API Key 或模型名');
 
     const fileText = extractReadableText(file);
+    if (file.extractedText) {
+      res.status(200).json({ text: file.extractedText });
+      return;
+    }
+
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: {
@@ -52,8 +57,11 @@ export default async function handler(req, res) {
 function extractReadableText(file) {
   const buffer = file.data;
   const isText = /^text\//.test(file.contentType) || /\.(txt|md|csv|json|xml|html|css|js|ts|py|log)$/i.test(file.filename);
-  if (isText) return buffer.toString('utf8').slice(0, 120000);
-  return buffer.toString('base64').slice(0, 120000);
+  if (isText) {
+    file.extractedText = buffer.toString('utf8').slice(0, 120000);
+    return file.extractedText;
+  }
+  return buffer.toString('base64').slice(0, 80000);
 }
 
 function readMultipart(req) {

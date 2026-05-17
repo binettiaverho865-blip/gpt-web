@@ -759,7 +759,7 @@
       const messageStore = transaction.objectStore(messagesStore);
       existing.forEach(key => messageStore.delete(key));
       chat.messages.forEach((message, index) => {
-        messageStore.put({ id: `${chat.id}:${index}`, sessionId: chat.id, index, role: message.role, content: message.content });
+        messageStore.put({ id: `${chat.id}:${index}`, sessionId: chat.id, index, role: message.role, content: message.content, apiContent: message.apiContent || message.content });
       });
       await new Promise((resolve, reject) => {
         transaction.oncomplete = resolve;
@@ -781,7 +781,7 @@
       const messages = await promisify(tx([messagesStore]).objectStore(messagesStore).index('sessionId').getAll(session.id));
       return {
         ...session,
-        messages: messages.sort((a, b) => a.index - b.index).map(({ role, content }) => ({ role, content })),
+        messages: messages.sort((a, b) => a.index - b.index).map(({ role, content, apiContent }) => ({ role, content, apiContent: apiContent || content })),
       };
     }
 
@@ -994,9 +994,9 @@
       return value.replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     }
 
-    function appendMessage(role, content) {
+    function appendMessage(role, content, apiContent = content) {
       const chat = activeChat();
-      chat.messages.push({ role, content });
+      chat.messages.push({ role, content, apiContent });
       if (role === 'user' && chat.title === '新的对话') {
         chat.title = content.slice(0, 22) + (content.length > 22 ? '…' : '');
       }
@@ -1035,8 +1035,8 @@
         return;
       }
 
-      const userText = await buildUserText(text);
-      appendMessage('user', userText);
+      const built = await buildUserMessage(text);
+      appendMessage('user', built.display, built.api);
       attachments = [];
       renderAttachments();
       els.prompt.value = '';
@@ -1047,7 +1047,7 @@
       try {
         const messages = activeChat().messages
           .slice(0, assistantIndex)
-          .map(({ role, content }) => ({ role, content }));
+          .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
         if (config.stream) {
           await requestStream(messages, content => {
             updateMessage(assistantIndex, content);
@@ -1064,26 +1064,43 @@
       }
     }
 
-    async function buildUserText(text) {
-      if (!attachments.length) return text;
-      const parts = [];
-      if (text) parts.push(text);
-      for (const file of attachments) {
-        parts.push(await attachmentToText(file));
+    async function buildUserMessage(text) {
+      if (!attachments.length) return { display: text, api: text };
+      const displayParts = [];
+      const apiParts = [];
+      if (text) {
+        displayParts.push(text);
+        apiParts.push(text);
       }
-      return parts.join('\n\n');
+      for (const file of attachments) {
+        showToast(`正在处理 ${file.name}...`);
+        const part = await attachmentToMessagePart(file);
+        displayParts.push(part.display);
+        apiParts.push(part.api);
+      }
+      return { display: displayParts.join('\n\n'), api: apiParts.join('\n\n') };
     }
 
-    async function attachmentToText(file) {
+    async function attachmentToMessagePart(file) {
       if (file.type.startsWith('image/')) {
         const dataUrl = await fileToDataUrl(file);
-        return `请分析这张图片：${file.name}\n\n${dataUrl}`;
+        return {
+          display: `【图片】${file.name}`,
+          api: `请分析这张图片：${file.name}\n\n${dataUrl}`,
+        };
       }
       if (isPlainTextFile(file)) {
         const text = await file.text();
-        return `下面是文件 ${file.name} 的内容：\n\n${text.slice(0, 60000)}`;
+        return {
+          display: `【文件】${file.name}`,
+          api: `下面是文件 ${file.name} 的内容：\n\n${text.slice(0, 60000)}`,
+        };
       }
-      return await parseFileWithBackend(file);
+      const parsed = await parseFileWithBackend(file);
+      return {
+        display: `【文件】${file.name}\n${parsed.slice(0, 1200)}${parsed.length > 1200 ? '\n…' : ''}`,
+        api: `下面是文件 ${file.name} 的 GPT 解析结果：\n\n${parsed}`,
+      };
     }
 
     function isPlainTextFile(file) {
@@ -1108,7 +1125,7 @@
       const response = await fetch('/api/parse-file', { method: 'POST', body });
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
-      return `下面是文件 ${file.name} 的 GPT 解析结果：\n\n${data.text}`;
+      return data.text || '模型没有返回解析内容';
     }
 
     function endpoint(path = '/v1/chat/completions') {
@@ -1177,7 +1194,7 @@
           try {
             const data = JSON.parse(payload);
             const delta = data?.choices?.[0]?.delta?.content || '';
-            if (delta) {
+          if (delta) {
               full += delta;
               onUpdate(full);
             }
