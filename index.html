@@ -674,6 +674,22 @@
             <option value="xhigh">极高</option>
           </select>
         </div>
+        <div class="field">
+          <label for="temperature">温度 Temperature</label>
+          <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="0.7" />
+        </div>
+        <div class="field">
+          <label for="topP">Top P</label>
+          <input id="topP" type="number" min="0" max="1" step="0.05" placeholder="1" />
+        </div>
+        <div class="field">
+          <label for="maxTokens">最大输出 Max Tokens</label>
+          <input id="maxTokens" type="number" min="0" step="1" placeholder="留空为接口默认" />
+        </div>
+        <div class="field">
+          <label for="contextCount">上下文消息数</label>
+          <input id="contextCount" type="number" min="0" step="1" placeholder="0 = 不限制" />
+        </div>
         <label class="switch-row">
           <span>流式输出</span>
           <input id="stream" type="checkbox" checked />
@@ -751,6 +767,10 @@
       fetchModelsBtn: document.getElementById('fetchModelsBtn'),
       modelList: null,
       reasoningEffort: document.getElementById('reasoningEffort'),
+      temperature: document.getElementById('temperature'),
+      topP: document.getElementById('topP'),
+      maxTokens: document.getElementById('maxTokens'),
+      contextCount: document.getElementById('contextCount'),
       stream: document.getElementById('stream'),
       toast: document.getElementById('toast'),
     };
@@ -822,9 +842,9 @@
 
     function loadConfig() {
       try {
-        return { stream: true, model: '', reasoningEffort: 'high', models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
+        return { stream: true, model: '', reasoningEffort: 'high', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
       } catch {
-        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'high', models: [], stream: true };
+        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'high', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], stream: true };
       }
     }
 
@@ -937,6 +957,10 @@
         apiKey: els.apiKey.value.trim(),
         model: currentModel(),
         reasoningEffort: els.reasoningEffort.value,
+        temperature: els.temperature.value,
+        topP: els.topP.value,
+        maxTokens: els.maxTokens.value,
+        contextCount: els.contextCount.value,
         stream: els.stream.checked,
       };
       localStorage.setItem('gpt-web-chat-config-v1', JSON.stringify(config));
@@ -1371,10 +1395,22 @@
     }
 
     function requestBody(messages, stream) {
-      const body = { model: config.model, messages: withSystemPrompt(messages), stream };
+      const body = { model: config.model, messages: withSystemPrompt(applyContextLimit(messages)), stream };
+      const temperature = Number(config.temperature);
+      const topP = Number(config.topP);
+      const maxTokens = Number(config.maxTokens);
+      if (!Number.isNaN(temperature)) body.temperature = temperature;
+      if (!Number.isNaN(topP)) body.top_p = topP;
+      if (maxTokens > 0) body.max_tokens = maxTokens;
       body.reasoning_effort = config.reasoningEffort || 'high';
       body.thinking = { type: 'enabled', budget_tokens: effortBudget(config.reasoningEffort || 'high') };
       return JSON.stringify(body);
+    }
+
+    function applyContextLimit(messages) {
+      const count = Number(config.contextCount || 0);
+      if (!count || count <= 0) return messages;
+      return messages.slice(-count);
     }
 
     function withSystemPrompt(messages) {
@@ -1567,10 +1603,14 @@
     els.model.value = '';
     els.customModel.value = '';
     els.reasoningEffort.value = config.reasoningEffort === 'max' || config.reasoningEffort === 'none' ? 'high' : (config.reasoningEffort || 'high');
+    els.temperature.value = config.temperature ?? 0.7;
+    els.topP.value = config.topP ?? 1;
+    els.maxTokens.value = config.maxTokens || '';
+    els.contextCount.value = config.contextCount || 0;
     els.stream.checked = config.stream !== false;
     renderModelList();
 
-    [els.baseUrl, els.apiKey, els.model, els.customModel, els.reasoningEffort, els.stream].forEach(el => {
+    [els.baseUrl, els.apiKey, els.model, els.customModel, els.reasoningEffort, els.temperature, els.topP, els.maxTokens, els.contextCount, els.stream].forEach(el => {
       el.addEventListener('change', () => { saveConfig(); renderHeader(); });
       el.addEventListener('input', () => { saveConfig(); renderHeader(); });
     });
