@@ -594,7 +594,6 @@
         <div class="field">
           <label for="reasoningEffort">思维强度</label>
           <select id="reasoningEffort">
-            <option value="none">不发送</option>
             <option value="low">低</option>
             <option value="medium">中</option>
             <option value="high">高</option>
@@ -740,9 +739,9 @@
 
     function loadConfig() {
       try {
-        return { stream: true, model: '', reasoningEffort: 'none', models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
+        return { stream: true, model: '', reasoningEffort: 'high', models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
       } catch {
-        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'none', models: [], stream: true };
+        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'high', models: [], stream: true };
       }
     }
 
@@ -923,7 +922,7 @@
     }
 
     function effortLabel(value) {
-      return ({ none: '不发送', low: '低', medium: '中', high: '高', xhigh: '极高' }[value] || '不发送');
+      return ({ low: '低', medium: '中', high: '高', xhigh: '极高' }[value] || '高');
     }
 
     function renderMessages() {
@@ -1134,10 +1133,8 @@
 
     function requestBody(messages, stream) {
       const body = { model: config.model, messages, stream };
-      if (config.reasoningEffort && config.reasoningEffort !== 'none') {
-        body.reasoning_effort = config.reasoningEffort;
-        body.thinking = { type: 'enabled', budget_tokens: effortBudget(config.reasoningEffort) };
-      }
+      body.reasoning_effort = config.reasoningEffort || 'high';
+      body.thinking = { type: 'enabled', budget_tokens: effortBudget(config.reasoningEffort || 'high') };
       return JSON.stringify(body);
     }
 
@@ -1303,7 +1300,7 @@
     els.apiKey.value = config.apiKey || '';
     els.model.value = '';
     els.customModel.value = '';
-    els.reasoningEffort.value = config.reasoningEffort === 'max' ? 'xhigh' : (config.reasoningEffort || 'none');
+    els.reasoningEffort.value = config.reasoningEffort === 'max' || config.reasoningEffort === 'none' ? 'high' : (config.reasoningEffort || 'high');
     els.stream.checked = config.stream !== false;
     renderModelList();
 
