@@ -119,10 +119,21 @@
     .primary-btn:disabled, .ghost-btn:disabled, .icon-btn:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 
     .sessions {
-      margin-top: 16px;
+      margin-top: 10px;
       overflow: auto;
       padding-right: 4px;
       flex: 1;
+    }
+
+    .session-search {
+      width: 100%;
+      margin-top: 14px;
+      color: var(--text);
+      background: rgba(2, 6, 23, 0.48);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 14px;
+      outline: none;
+      padding: 11px 12px;
     }
 
     .session-item {
@@ -181,6 +192,52 @@
       margin-top: 5px;
       color: var(--muted);
       font-size: 12px;
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .preset-btn {
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      background: rgba(148, 163, 184, 0.08);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 8px;
+      font-size: 12px;
+    }
+
+    .preset-btn:hover, .preset-btn.active {
+      border-color: rgba(124, 58, 237, 0.48);
+      background: rgba(124, 58, 237, 0.18);
+    }
+
+    .field textarea {
+      width: 100%;
+      min-height: 82px;
+      resize: vertical;
+      color: var(--text);
+      background: rgba(2, 6, 23, 0.48);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 12px;
+      outline: none;
+      padding: 11px 12px;
+      line-height: 1.5;
+    }
+
+    .field textarea:focus {
+      border-color: rgba(124, 58, 237, 0.72);
+      box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+    }
+
+    .field-hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
     }
 
     .config {
@@ -675,6 +732,7 @@
       </div>
 
       <button class="primary-btn" id="newChatBtn">+ 新建对话</button>
+      <input class="session-search" id="sessionSearch" placeholder="搜索历史对话" autocomplete="off" />
       <div class="sessions" id="sessions"></div>
 
       <details class="config" open>
@@ -696,6 +754,20 @@
             <button class="ghost-btn small-btn" id="fetchModelsBtn" type="button">获取模型</button>
           </div>
           <input id="customModel" placeholder="或在这里手动输入模型名" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>预设模式</label>
+          <div class="preset-grid" id="presetGrid">
+            <button class="preset-btn" type="button" data-preset="accurate">精准</button>
+            <button class="preset-btn" type="button" data-preset="balanced">平衡</button>
+            <button class="preset-btn" type="button" data-preset="creative">创意</button>
+            <button class="preset-btn" type="button" data-preset="code">代码</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="systemPrompt">系统提示词</label>
+          <textarea id="systemPrompt" placeholder="例如：你是一个简洁、准确的中文助手。"></textarea>
+          <div class="field-hint">会作为 system 消息发送，用来固定 AI 角色、语气和规则。</div>
         </div>
         <div class="field">
           <label for="reasoningEffort">思维强度</label>
@@ -776,6 +848,7 @@
       sidebarCloseBtn: document.getElementById('sidebarCloseBtn'),
       menuBtn: document.getElementById('menuBtn'),
       newChatBtn: document.getElementById('newChatBtn'),
+      sessionSearch: document.getElementById('sessionSearch'),
       sessions: document.getElementById('sessions'),
       messages: document.getElementById('messages'),
       chatTitle: document.getElementById('chatTitle'),
@@ -798,6 +871,8 @@
       customModel: document.getElementById('customModel'),
       fetchModelsBtn: document.getElementById('fetchModelsBtn'),
       modelList: null,
+      presetGrid: document.getElementById('presetGrid'),
+      systemPrompt: document.getElementById('systemPrompt'),
       reasoningEffort: document.getElementById('reasoningEffort'),
       temperature: document.getElementById('temperature'),
       topP: document.getElementById('topP'),
@@ -814,6 +889,13 @@
     let activeController = null;
     let editingIndex = null;
     let attachments = [];
+
+    const presets = {
+      accurate: { label: '精准', temperature: 0.2, topP: 0.9, contextCount: 12, maxTokens: '' },
+      balanced: { label: '平衡', temperature: 0.7, topP: 1, contextCount: 16, maxTokens: '' },
+      creative: { label: '创意', temperature: 1, topP: 0.95, contextCount: 10, maxTokens: '' },
+      code: { label: '代码', temperature: 0.3, topP: 0.9, contextCount: 20, maxTokens: '' },
+    };
 
     function openDb() {
       return new Promise((resolve, reject) => {
@@ -874,9 +956,9 @@
 
     function loadConfig() {
       try {
-        return { stream: true, model: '', reasoningEffort: 'high', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
+        return { stream: true, model: '', reasoningEffort: 'high', preset: '', systemPrompt: '', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], ...JSON.parse(localStorage.getItem('gpt-web-chat-config-v1')) };
       } catch {
-        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'high', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], stream: true };
+        return { baseUrl: '', apiKey: '', model: '', reasoningEffort: 'high', preset: '', systemPrompt: '', temperature: 0.7, topP: 1, maxTokens: '', contextCount: 0, models: [], stream: true };
       }
     }
 
@@ -931,7 +1013,7 @@
             title: chat.title || '导入的对话',
             createdAt: chat.createdAt || Date.now(),
             updatedAt: chat.updatedAt || Date.now(),
-            messages: Array.isArray(chat.messages) ? chat.messages.map(({ role, content }) => ({ role, content })) : [],
+            messages: Array.isArray(chat.messages) ? chat.messages.map(({ role, content, apiContent }) => ({ role, content, apiContent })) : [],
           };
           await saveChat(normalized);
         }
@@ -988,6 +1070,8 @@
         baseUrl: els.baseUrl.value.trim(),
         apiKey: els.apiKey.value.trim(),
         model: currentModel(),
+        preset: config.preset || '',
+        systemPrompt: els.systemPrompt.value.trim(),
         reasoningEffort: els.reasoningEffort.value,
         temperature: els.temperature.value,
         topP: els.topP.value,
@@ -1014,7 +1098,16 @@
 
     function renderSessions() {
       els.sessions.innerHTML = '';
-      state.chats.forEach(chat => {
+      const query = els.sessionSearch.value.trim().toLowerCase();
+      const chats = query ? state.chats.filter(chat => matchesSession(chat, query)) : state.chats;
+      if (!chats.length) {
+        const empty = document.createElement('div');
+        empty.className = 'session-meta';
+        empty.textContent = '没有匹配的对话';
+        els.sessions.appendChild(empty);
+        return;
+      }
+      chats.forEach(chat => {
         const button = document.createElement('button');
         button.className = 'session-item' + (chat.id === state.activeId ? ' active' : '');
         button.innerHTML = `<div class="session-main"><div class="session-title"></div><div class="session-meta">${chat.messages.length} 条消息</div></div><button class="delete-session" type="button" title="删除对话">×</button>`;
@@ -1033,10 +1126,15 @@
       });
     }
 
+    function matchesSession(chat, query) {
+      return String(chat.title || '').toLowerCase().includes(query) || chat.messages.some(message => String(message.content || '').toLowerCase().includes(query));
+    }
+
     function renderHeader() {
       const chat = activeChat();
+      const preset = presets[config.preset]?.label;
       els.chatTitle.textContent = chat.title;
-      els.chatSubTitle.textContent = config.model ? `当前模型：${config.model} · 思维强度：${effortLabel(config.reasoningEffort)}` : '请先填写模型名称';
+      els.chatSubTitle.textContent = config.model ? `当前模型：${config.model} · ${preset ? `${preset}模式 · ` : ''}思维强度：${effortLabel(config.reasoningEffort)}` : '请先填写模型名称';
     }
 
     function renderAttachments() {
@@ -1446,8 +1544,10 @@
     }
 
     function withSystemPrompt(messages) {
+      const mathPrompt = '如果回答包含数学公式，请使用标准 LaTeX：行内公式用 $...$，独立公式用 $$...$$。不要用纯文本模拟分式、根号或上下标。';
+      const prompt = [mathPrompt, config.systemPrompt].filter(Boolean).join('\n\n');
       return [
-        { role: 'system', content: '如果回答包含数学公式，请使用标准 LaTeX：行内公式用 $...$，独立公式用 $$...$$。不要用纯文本模拟分式、根号或上下标。' },
+        { role: 'system', content: prompt },
         ...messages,
       ];
     }
@@ -1600,6 +1700,26 @@
       if (config.model && !els.model.value) els.customModel.value = config.model;
     }
 
+    function applyPreset(name) {
+      const preset = presets[name];
+      if (!preset) return;
+      config.preset = name;
+      els.temperature.value = preset.temperature;
+      els.topP.value = preset.topP;
+      els.maxTokens.value = preset.maxTokens;
+      els.contextCount.value = preset.contextCount;
+      saveConfig();
+      renderPresetButtons();
+      renderHeader();
+      showToast(`已切换到${preset.label}模式`);
+    }
+
+    function renderPresetButtons() {
+      els.presetGrid.querySelectorAll('.preset-btn').forEach(button => {
+        button.classList.toggle('active', button.dataset.preset === config.preset);
+      });
+    }
+
     function setSending(value) {
       sending = value;
       els.sendBtn.disabled = false;
@@ -1634,6 +1754,7 @@
     els.apiKey.value = config.apiKey || '';
     els.model.value = '';
     els.customModel.value = '';
+    els.systemPrompt.value = config.systemPrompt || '';
     els.reasoningEffort.value = config.reasoningEffort === 'max' || config.reasoningEffort === 'none' ? 'high' : (config.reasoningEffort || 'high');
     els.temperature.value = config.temperature ?? 0.7;
     els.topP.value = config.topP ?? 1;
@@ -1641,10 +1762,11 @@
     els.contextCount.value = config.contextCount || 0;
     els.stream.checked = config.stream !== false;
     renderModelList();
+    renderPresetButtons();
 
-    [els.baseUrl, els.apiKey, els.model, els.customModel, els.reasoningEffort, els.temperature, els.topP, els.maxTokens, els.contextCount, els.stream].forEach(el => {
-      el.addEventListener('change', () => { saveConfig(); renderHeader(); });
-      el.addEventListener('input', () => { saveConfig(); renderHeader(); });
+    [els.baseUrl, els.apiKey, els.model, els.customModel, els.systemPrompt, els.reasoningEffort, els.temperature, els.topP, els.maxTokens, els.contextCount, els.stream].forEach(el => {
+      el.addEventListener('change', () => { config.preset = ''; saveConfig(); renderHeader(); renderPresetButtons(); });
+      el.addEventListener('input', () => { config.preset = ''; saveConfig(); renderHeader(); renderPresetButtons(); });
     });
 
     els.chatForm.addEventListener('submit', sendMessage);
@@ -1667,6 +1789,11 @@
       renderHeader();
     });
     els.prompt.addEventListener('input', autosize);
+    els.sessionSearch.addEventListener('input', renderSessions);
+    els.presetGrid.addEventListener('click', event => {
+      const button = event.target.closest('.preset-btn');
+      if (button) applyPreset(button.dataset.preset);
+    });
     els.prompt.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
