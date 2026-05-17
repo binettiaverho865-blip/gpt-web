@@ -447,6 +447,31 @@
       background: linear-gradient(180deg, rgba(15, 23, 42, 0.44), rgba(15, 23, 42, 0.86));
     }
 
+    .edit-banner {
+      max-width: 920px;
+      margin: 0 auto 10px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(124, 58, 237, 0.28);
+      background: rgba(124, 58, 237, 0.14);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .edit-banner.show { display: flex; }
+
+    .edit-banner button {
+      border: 0;
+      border-radius: 10px;
+      padding: 6px 10px;
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.76);
+    }
+
     .composer {
       max-width: 920px;
       margin: 0 auto;
@@ -678,6 +703,10 @@
       <section class="messages" id="messages"></section>
 
       <footer class="composer-wrap">
+        <div class="edit-banner" id="editBanner">
+          <span>正在修改一条用户消息，发送后才会替换原消息。</span>
+          <button type="button" id="cancelEditBtn">取消</button>
+        </div>
         <div class="attachment-bar" id="attachmentBar"></div>
         <form class="composer" id="chatForm">
           <textarea id="prompt" rows="1" placeholder="给 AI 发送消息，Shift + Enter 换行"></textarea>
@@ -712,6 +741,8 @@
       importBtn: document.getElementById('importBtn'),
       importFile: document.getElementById('importFile'),
       chatForm: document.getElementById('chatForm'),
+      editBanner: document.getElementById('editBanner'),
+      cancelEditBtn: document.getElementById('cancelEditBtn'),
       attachBtn: document.getElementById('attachBtn'),
       fileInput: document.getElementById('fileInput'),
       attachmentBar: document.getElementById('attachmentBar'),
@@ -733,6 +764,7 @@
     let db;
     let sending = false;
     let activeController = null;
+    let editingIndex = null;
     let attachments = [];
 
     function openDb() {
@@ -1052,6 +1084,7 @@
       const actions = document.createElement('div');
       actions.className = 'message-actions';
       actions.appendChild(createActionButton('复制', () => copyText(message.content || '')));
+      if (message.role === 'user') actions.appendChild(createActionButton('修改', () => startEditMessage(index)));
       actions.appendChild(createActionButton('重发', () => regenerateFrom(index)));
       actions.appendChild(createActionButton('删除', () => deleteMessage(index), 'danger'));
       return actions;
@@ -1147,6 +1180,36 @@
       return Array.isArray(content) && content.some(part => part?.type === 'image_url');
     }
 
+    function startEditMessage(index) {
+      if (sending) return;
+      const message = activeChat().messages[index];
+      if (!message || message.role !== 'user') return;
+      editingIndex = index;
+      els.prompt.value = message.content || '';
+      attachments = [];
+      renderAttachments();
+      renderEditBanner();
+      setSending(false);
+      autosize();
+      els.prompt.focus();
+      showToast('修改中，发送后才会替换原消息');
+    }
+
+    function cancelEdit() {
+      editingIndex = null;
+      els.prompt.value = '';
+      attachments = [];
+      renderAttachments();
+      renderEditBanner();
+      setSending(false);
+      autosize();
+      showToast('已取消修改');
+    }
+
+    function renderEditBanner() {
+      els.editBanner.classList.toggle('show', editingIndex !== null);
+    }
+
     async function sendMessage(event) {
       event.preventDefault();
       if (sending) {
@@ -1162,7 +1225,18 @@
       }
 
       const built = await buildUserMessage(text);
-      const userIndex = appendMessage('user', built.display, built.api);
+      const chat = activeChat();
+      let userIndex;
+      if (editingIndex !== null) {
+        chat.messages.splice(editingIndex);
+        userIndex = chat.messages.push({ role: 'user', content: built.display, apiContent: built.api }) - 1;
+        editingIndex = null;
+        saveState();
+        renderEditBanner();
+        render();
+      } else {
+        userIndex = appendMessage('user', built.display, built.api);
+      }
       attachments = [];
       renderAttachments();
       els.prompt.value = '';
@@ -1466,6 +1540,7 @@
       sending = value;
       els.sendBtn.disabled = false;
       els.prompt.disabled = value;
+      els.attachBtn.disabled = value || editingIndex !== null;
       els.sendBtn.textContent = value ? '■' : '↑';
       els.sendBtn.title = value ? '停止生成' : '发送';
     }
@@ -1505,6 +1580,7 @@
     });
 
     els.chatForm.addEventListener('submit', sendMessage);
+    els.cancelEditBtn.addEventListener('click', cancelEdit);
     els.attachBtn.addEventListener('click', () => els.fileInput.click());
     els.fileInput.addEventListener('change', () => {
       attachments.push(...Array.from(els.fileInput.files || []));
